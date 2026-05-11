@@ -1,0 +1,21 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sf_bg" x1="14" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="sf_wave" x1="29" y1="73" x2="99" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#BAE6FD"/>
+    </linearGradient>
+    <clipPath id="sf_hex_clip">
+      <path d="M64 6L114.23 35V93L64 122L13.77 93V35L64 6Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#sf_hex_clip)">
+    <rect x="0" y="0" width="128" height="128" fill="url(#sf_bg)"/>
+    <path d="M64 18L103.84 41V87L64 110L24.16 87V41L64 18Z" stroke="rgba(255,255,255,0.18)" stroke-width="2"/>
+    <path d="M36 42H76C84.837 42 92 49.163 92 58C92 66.837 84.837 74 76 74H48C41.373 74 36 79.373 36 86V86" stroke="url(#sf_wave)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M49 93H92" stroke="#7DD3FC" stroke-width="12" stroke-linecap="round"/>
+  </g>
+</svg>
