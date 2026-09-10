@@ -9,6 +9,10 @@ type GoogleAuthButtonProps = {
 
 const GOOGLE_SCRIPT_ID = "google-identity-services";
 let gsiInitialized = false;
+// Stable refs so the GSI callback always calls the latest handlers,
+// even when initialize() only fires once across navigations.
+let _onCredentialRef: ((credential: string) => Promise<void> | void) | null = null;
+let _onErrorRef: ((message: string) => void) | undefined = undefined;
 
 const loadGoogleScript = () =>
   new Promise<void>((resolve, reject) => {
@@ -49,6 +53,11 @@ const buttonText = (mode: GoogleAuthButtonProps["mode"]) => {
 export function GoogleAuthButton({ mode = "signin", onCredential, onError }: GoogleAuthButtonProps) {
   const buttonRef = useRef<HTMLDivElement | null>(null);
 
+  // Keep module-level refs in sync on every render so the GSI callback
+  // always dispatches to the current page's handler, not a stale one.
+  _onCredentialRef = onCredential;
+  _onErrorRef = onError;
+
   useEffect(() => {
     const clientId = env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId) {
@@ -71,10 +80,10 @@ export function GoogleAuthButton({ mode = "signin", onCredential, onError }: Goo
             client_id: clientId,
             callback: (response) => {
               if (!response.credential) {
-                onError?.("Google sign-in did not return a credential.");
+                _onErrorRef?.("Google sign-in did not return a credential.");
                 return;
               }
-              void onCredential(response.credential);
+              void _onCredentialRef?.(response.credential);
             },
           });
         }
@@ -88,14 +97,14 @@ export function GoogleAuthButton({ mode = "signin", onCredential, onError }: Goo
         });
       })
       .catch((error: Error) => {
-        onError?.(error.message);
+        _onErrorRef?.(error.message);
       });
 
     return () => {
       cancelled = true;
       window.google?.accounts?.id.cancel?.();
     };
-  }, [mode, onCredential, onError]);
+  }, [mode]); // onCredential/onError intentionally omitted — handled via module-level refs
 
   if (!env.VITE_GOOGLE_CLIENT_ID) {
     return <div className="google-auth-placeholder">Google sign-in will appear after `VITE_GOOGLE_CLIENT_ID` is configured.</div>;

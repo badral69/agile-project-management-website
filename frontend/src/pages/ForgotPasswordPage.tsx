@@ -1,8 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { HexCanvas } from "../components/ui/HexCanvas";
 import { LanguageSwitcher } from "../components/ui/LanguageSwitcher";
@@ -16,7 +16,7 @@ const requestSchema = z.object({
 const resetSchema = z
   .object({
     email: z.string().email(),
-    code: z.string().length(6).regex(/^\d{6}$/),
+    token: z.string().length(64),
     newPassword: z
       .string()
       .min(8)
@@ -37,6 +37,7 @@ type ResetFormValues = z.infer<typeof resetSchema>;
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useI18n();
   const [step, setStep] = useState<"request" | "reset">("request");
   const [success, setSuccess] = useState("");
@@ -52,14 +53,23 @@ export default function ForgotPasswordPage() {
     resolver: zodResolver(resetSchema),
   });
 
-  const handleRequestCode = async (values: RequestFormValues) => {
+  // When arriving via the email link (?token=...&email=...), jump straight to reset step
+  useEffect(() => {
+    const token = searchParams.get("token");
+    const email = searchParams.get("email");
+    if (token && email) {
+      resetForm.setValue("token", token);
+      resetForm.setValue("email", email);
+      setStep("reset");
+    }
+  }, [searchParams, resetForm]);
+
+  const handleRequestReset = async (values: RequestFormValues) => {
     try {
       setError("");
       setSuccess("");
       const { data } = await api.post<{ message: string }>("/auth/forgot-password", values);
       setSuccess(data.message);
-      resetForm.setValue("email", values.email);
-      setStep("reset");
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     }
@@ -71,7 +81,7 @@ export default function ForgotPasswordPage() {
       setSuccess("");
       const { data } = await api.post<{ message: string }>("/auth/reset-password", {
         email: values.email,
-        code: values.code,
+        token: values.token,
         newPassword: values.newPassword,
       });
       setSuccess(data.message);
@@ -110,11 +120,13 @@ export default function ForgotPasswordPage() {
           {step === "request" ? t("auth.forgotPasswordTitle") : t("auth.createNewPassword")}
         </h1>
         <p className="auth-hex-sub">
-          {step === "request" ? t("auth.forgotPasswordHeroDescription") : t("auth.enterCodeEyebrow")}
+          {step === "request"
+            ? t("auth.forgotPasswordHeroDescription")
+            : "Enter your new password below."}
         </p>
 
         {step === "request" ? (
-          <form className="auth-hex-form" onSubmit={requestForm.handleSubmit(handleRequestCode)}>
+          <form className="auth-hex-form" onSubmit={requestForm.handleSubmit(handleRequestReset)}>
             <label className="auth-hex-label">
               {t("auth.email")}
               <input
@@ -137,33 +149,9 @@ export default function ForgotPasswordPage() {
           </form>
         ) : (
           <form className="auth-hex-form" onSubmit={resetForm.handleSubmit(handleResetPassword)}>
-            <label className="auth-hex-label">
-              {t("auth.email")}
-              <input
-                type="email"
-                className="auth-hex-input"
-                placeholder="you@company.com"
-                {...resetForm.register("email")}
-              />
-              {resetForm.formState.errors.email ? (
-                <small className="auth-hex-err">{resetForm.formState.errors.email.message}</small>
-              ) : null}
-            </label>
-
-            <label className="auth-hex-label">
-              {t("auth.verificationCode")}
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                className="auth-hex-input"
-                placeholder="123456"
-                {...resetForm.register("code")}
-              />
-              {resetForm.formState.errors.code ? (
-                <small className="auth-hex-err">{resetForm.formState.errors.code.message}</small>
-              ) : null}
-            </label>
+            {/* token and email are pre-filled from URL params and submitted silently */}
+            <input type="hidden" {...resetForm.register("token")} />
+            <input type="hidden" {...resetForm.register("email")} />
 
             <label className="auth-hex-label">
               {t("auth.newPassword")}

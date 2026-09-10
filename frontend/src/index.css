@@ -2670,6 +2670,14 @@ small {
   padding: 28px;
 }
 
+.danger-zone-panel {
+  border-color: var(--danger);
+}
+
+.danger-card {
+  border-left: 3px solid var(--danger);
+}
+
 .checkout-heading-block {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 250px;

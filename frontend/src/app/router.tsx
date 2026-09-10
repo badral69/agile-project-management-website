@@ -24,6 +24,7 @@ const CheckoutPage = lazy(() => import("../pages/CheckoutPage"));
 const CheckoutSuccessPage = lazy(() => import("../pages/CheckoutSuccessPage"));
 const SettingsPage = lazy(() => import("../pages/SettingsPage"));
 const InboxPage = lazy(() => import("../pages/InboxPage"));
+const VerifyEmailPage = lazy(() => import("../pages/VerifyEmailPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 const withSuspense = (element: ReactElement) => (
@@ -64,6 +65,10 @@ export const router = createBrowserRouter([
   {
     path: "/checkout/success",
     element: withSuspense(<CheckoutSuccessPage />),
+  },
+  {
+    path: "/verify-email",
+    element: withSuspense(<VerifyEmailPage />),
   },
   {
     element: <ProtectedRoute />,

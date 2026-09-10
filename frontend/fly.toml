@@ -6,7 +6,7 @@ primary_region = "nrt"
 
   [build.args]
     VITE_API_URL = "/api"
-    VITE_STRIPE_PUBLISHABLE_KEY = "pk_test_51TMLi3JVRBF48qM1bvAdWW6sNIeN32yuGWT2gICSaePTWN7iINIilvNarKmb4xEQmUkMlR3NhM66xDRRDrL9u8Xv00EwaFRPnm"
+    VITE_STRIPE_PUBLISHABLE_KEY = "pk_test_51TObqZ5gPmUikWFN4D15wNFnYkqLBIn5i3Kq5DgOtariRZ8gZ1MK49xDzLtqdv4dzbqlMAN2zsU0dohcyfiw0RvR00inKzkonn"
     VITE_GOOGLE_CLIENT_ID = "422220829233-19gsn42r7ef3639eeuqjrlqo07lulksf.apps.googleusercontent.com"
 
 [env]

@@ -43,6 +43,11 @@ export const requireCsrfProtection = (request: Request, response: Response, next
     return next();
   }
 
+  // Stripe webhooks carry their own signature — CSRF does not apply
+  if (request.path.endsWith("/billing/webhook")) {
+    return next();
+  }
+
   const cookieToken = request.cookies[CSRF_COOKIE_NAME];
   const headerToken = request.headers["x-csrf-token"];
   const requestToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;

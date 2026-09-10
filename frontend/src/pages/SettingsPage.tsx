@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { GoogleAuthButton } from "../components/auth/GoogleAuthButton";
 import { PageHeader } from "../components/ui/PageHeader";
 import { LanguageSwitcher } from "../components/ui/LanguageSwitcher";
@@ -20,15 +20,39 @@ const billingPlanKeyMap: Record<string, PricingPlanKey> = {
 };
 
 export default function SettingsPage() {
-  const { user, refreshUser, linkGoogleAccount } = useAuth();
+  const { user, refreshUser, linkGoogleAccount, logout } = useAuth();
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [fullName, setFullName] = useState(user?.fullName || "");
   const [avatarColor, setAvatarColor] = useState(user?.avatarColor || "#2563eb");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl || null);
   const [error, setError] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
   const activeView = searchParams.get("view") || "profile";
   const currentPlanKey = billingPlanKeyMap[user?.billingPlan || "STARTER"] || "starter";
+
+  const deleteAccount = useMutation({
+    mutationFn: () => api.delete("/users/me"),
+    onSuccess: async () => {
+      await logout();
+      navigate("/");
+    },
+    onError: (err) => setError(getErrorMessage(err)),
+  });
+
+  const exportData = useMutation({
+    mutationFn: async () => {
+      const res = await api.get("/users/me/export", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sprintflow-data-${user?.id || "export"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err) => setError(getErrorMessage(err)),
+  });
 
   const updateProfile = useMutation({
     mutationFn: async () =>
@@ -279,6 +303,51 @@ export default function SettingsPage() {
           </div>
         </div>
       ) : null}
+
+      {/* GDPR / Danger zone — always visible */}
+      <div className="panel settings-panel danger-zone-panel">
+        <div className="panel-header">
+          <h3>Data &amp; Privacy</h3>
+          <span className="eyebrow">GDPR</span>
+        </div>
+        <div className="stack-list">
+          <div className="border-card list-card">
+            <div>
+              <strong>Export your data</strong>
+              <p>Download a JSON file with all your account data, projects, tasks, and activity.</p>
+            </div>
+            <button className="ghost-button" type="button" onClick={() => exportData.mutate()} disabled={exportData.isPending}>
+              {exportData.isPending ? "Preparing…" : "Export data"}
+            </button>
+          </div>
+          <div className="border-card list-card danger-card">
+            <div>
+              <strong>Delete account</strong>
+              <p>Permanently delete your account and all associated data. This cannot be undone.</p>
+              <input
+                className="settings-input"
+                placeholder={`Type "${user?.email}" to confirm`}
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                style={{ marginTop: "0.5rem" }}
+              />
+            </div>
+            <button
+              className="danger-button"
+              type="button"
+              disabled={deleteConfirm !== user?.email || deleteAccount.isPending}
+              onClick={() => deleteAccount.mutate()}
+            >
+              {deleteAccount.isPending ? "Deleting…" : "Delete account"}
+            </button>
+          </div>
+        </div>
+        {!user?.emailVerified ? (
+          <div className="form-error" style={{ marginTop: "1rem" }}>
+            Your email address is not verified. Check your inbox for a verification link.
+          </div>
+        ) : null}
+      </div>
 
     </section>
   );

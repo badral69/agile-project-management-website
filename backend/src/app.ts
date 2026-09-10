@@ -59,15 +59,19 @@ app.use(
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many authentication attempts, please try again later." },
-  skipSuccessfulRequests: true,
+  skip: (req) => req.method === "GET",
 });
 app.use(hpp());
 app.use(compression());
 app.use(morgan("dev", { stream: { write: (msg) => logger.info(msg.trim()) } }));
+
+// Raw body required for Stripe webhook signature verification — must come before express.json()
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
+
 app.use(express.json({ limit: "5mb" }));
 app.use(cookieParser());
 app.use(ensureCsrfCookie);

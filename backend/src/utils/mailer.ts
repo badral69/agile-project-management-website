@@ -26,7 +26,7 @@ type ContactMessageMailParams = {
 type PasswordResetMailParams = {
   recipientEmail: string;
   recipientName: string;
-  code: string;
+  resetUrl: string;
 };
 
 let transporter: nodemailer.Transporter | null | undefined;
@@ -142,32 +142,51 @@ export const sendContactMessageEmail = async ({ senderName, senderEmail, company
   });
 };
 
-export const sendPasswordResetCodeEmail = async ({ recipientEmail, recipientName, code }: PasswordResetMailParams) => {
+export const sendVerificationEmail = async ({ recipientEmail, recipientName, verifyUrl }: { recipientEmail: string; recipientName: string; verifyUrl: string }) => {
   const activeTransporter = getTransporter();
 
   if (!activeTransporter) {
-    logger.info(`[mail skipped] Password reset code for ${recipientEmail}: ${code}. Configure SMTP_HOST to send real emails.`);
+    logger.info(`[mail skipped] Email verification for ${recipientEmail}: ${verifyUrl}. Configure SMTP_HOST to send real emails.`);
     return;
   }
 
   await activeTransporter.sendMail({
     from: env.MAIL_FROM,
     to: recipientEmail,
-    subject: "SprintFlow password reset code",
+    subject: "Verify your SprintFlow email",
+    text: [`Hello ${recipientName},`, "", "Please verify your email address by visiting the link below:", verifyUrl, "", "This link expires in 24 hours.", "If you did not create a SprintFlow account, you can ignore this email."].join("\n"),
+    html: `<p>Hello ${recipientName},</p><p>Please verify your email address by clicking the button below:</p><p><a href="${verifyUrl}" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">Verify email</a></p><p>Or copy this link: ${verifyUrl}</p><p>This link expires in 24 hours.</p>`,
+  });
+};
+
+export const sendPasswordResetEmail = async ({ recipientEmail, recipientName, resetUrl }: PasswordResetMailParams) => {
+  const activeTransporter = getTransporter();
+
+  if (!activeTransporter) {
+    logger.info(`[mail skipped] Password reset for ${recipientEmail}: ${resetUrl}. Configure SMTP_HOST to send real emails.`);
+    return;
+  }
+
+  await activeTransporter.sendMail({
+    from: env.MAIL_FROM,
+    to: recipientEmail,
+    subject: "SprintFlow password reset",
     text: [
       `Hello ${recipientName},`,
       "",
-      `We received a request to reset your SprintFlow password.`,
-      `Your verification code is: ${code}`,
+      "We received a request to reset your SprintFlow password.",
+      "Click the link below to set a new password:",
+      resetUrl,
       "",
-      "This code expires in 15 minutes.",
+      "This link expires in 15 minutes.",
       "If you did not request this, you can ignore this email.",
     ].join("\n"),
     html: `
       <p>Hello ${recipientName},</p>
       <p>We received a request to reset your SprintFlow password.</p>
-      <p><strong>Your verification code is: ${code}</strong></p>
-      <p>This code expires in 15 minutes.</p>
+      <p><a href="${resetUrl}" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">Reset password</a></p>
+      <p>Or copy this link: ${resetUrl}</p>
+      <p>This link expires in 15 minutes.</p>
       <p>If you did not request this, you can ignore this email.</p>
     `,
   });

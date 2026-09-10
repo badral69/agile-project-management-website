@@ -232,6 +232,68 @@ export const createCheckoutSession = asyncHandler(async (request: Request, respo
   });
 });
 
+export const stripeWebhook = async (request: Request, response: Response): Promise<void> => {
+  const sig = request.headers["stripe-signature"];
+  const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+
+  if (!sig || !webhookSecret) {
+    response.status(400).json({ message: "Missing stripe signature or webhook secret." });
+    return;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let event: any;
+  try {
+    event = requireStripe().webhooks.constructEvent(request.body as Buffer, sig, webhookSecret);
+  } catch {
+    response.status(400).json({ message: "Webhook signature verification failed." });
+    return;
+  }
+
+  // Idempotency: skip events already processed (Stripe retries on timeout/5xx)
+  const alreadyProcessed = await prisma.stripeEvent.findUnique({ where: { id: event.id } });
+  if (alreadyProcessed) {
+    response.json({ received: true });
+    return;
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session = event.data.object as any;
+      await syncCheckoutToUser(session as CheckoutSession);
+    } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const subscription = event.data.object as any;
+      const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+      await prisma.user.updateMany({
+        where: { stripeCustomerId: customerId },
+        data: {
+          subscriptionStatus: subscription.status,
+          stripeSubscriptionId: subscription.id,
+        },
+      });
+    } else if (event.type === "invoice.payment_failed") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const invoice = event.data.object as any;
+      const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+      if (customerId) {
+        await prisma.user.updateMany({
+          where: { stripeCustomerId: customerId },
+          data: { subscriptionStatus: "past_due" },
+        });
+      }
+    }
+
+    await prisma.stripeEvent.create({ data: { id: event.id } });
+  } catch {
+    response.status(500).json({ message: "Webhook handler error." });
+    return;
+  }
+
+  response.json({ received: true });
+};
+
 export const getCheckoutSession = asyncHandler(async (request: Request, response: Response) => {
   const sessionId = String(request.params.id);
   const session = await requireStripe().checkout.sessions.retrieve(sessionId);

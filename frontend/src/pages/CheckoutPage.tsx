@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../features/auth/AuthContext";
 import { env } from "../config/env";
-import { api } from "../lib/api";
+import { api, getErrorMessage } from "../lib/api";
 import { calculateEnterpriseMonthlyPrice, defaultEnterpriseOptions, pricingPlans, type EnterpriseOptions, type PricingPlanKey } from "../lib/pricing";
 
 const stripePromise = env.VITE_STRIPE_PUBLISHABLE_KEY ? loadStripe(env.VITE_STRIPE_PUBLISHABLE_KEY) : null;
@@ -19,6 +19,7 @@ export default function CheckoutPage() {
   const [searchParams] = useSearchParams();
   const { isAuthenticated, user } = useAuth();
   const [error, setError] = useState("");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const sessionIdRef = useRef("");
   const [checkoutBootstrap, setCheckoutBootstrap] = useState<CheckoutBootstrap | null>(null);
   const [enterpriseOptions, setEnterpriseOptions] = useState(defaultEnterpriseOptions);
@@ -34,6 +35,7 @@ export default function CheckoutPage() {
 
   const startEmbeddedCheckout = () => {
     setError("");
+    setCheckoutLoading(true);
     setCheckoutBootstrap({
       plan: selectedPlan.key,
       enterpriseOptions,
@@ -41,24 +43,30 @@ export default function CheckoutPage() {
   };
 
   const fetchClientSecret = useCallback(async () => {
-    const payload = {
-      plan: checkoutBootstrap?.plan || selectedPlan.key,
-      ...((checkoutBootstrap?.plan || selectedPlan.key) === "enterprise" ? checkoutBootstrap?.enterpriseOptions || enterpriseOptions : {}),
-    };
+    try {
+      const payload = {
+        plan: checkoutBootstrap?.plan || selectedPlan.key,
+        ...((checkoutBootstrap?.plan || selectedPlan.key) === "enterprise" ? checkoutBootstrap?.enterpriseOptions || enterpriseOptions : {}),
+      };
 
-    const { data } = await api.post<{
-      clientSecret?: string;
-      sessionId?: string;
-      free?: boolean;
-    }>("/billing/checkout-session", payload);
+      const { data } = await api.post<{
+        clientSecret?: string;
+        sessionId?: string;
+        free?: boolean;
+      }>("/billing/checkout-session", payload);
 
-    if (data.free || !data.clientSecret || !data.sessionId) {
-      navigate(isAuthenticated ? "/workspace" : "/register");
+      if (data.free || !data.clientSecret || !data.sessionId) {
+        navigate(isAuthenticated ? "/workspace" : "/register");
+        return "";
+      }
+
+      sessionIdRef.current = data.sessionId;
+      return data.clientSecret;
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setCheckoutBootstrap(null);
       return "";
     }
-
-    sessionIdRef.current = data.sessionId;
-    return data.clientSecret;
   }, [checkoutBootstrap?.enterpriseOptions, checkoutBootstrap?.plan, enterpriseOptions, isAuthenticated, navigate, selectedPlan.key]);
 
   const handleCheckoutComplete = useCallback(() => {
@@ -204,8 +212,8 @@ export default function CheckoutPage() {
               </EmbeddedCheckoutProvider>
             </div>
           ) : (
-            <button className="primary-button" type="button" onClick={startEmbeddedCheckout}>
-              Continue to payment
+            <button className="primary-button" type="button" onClick={startEmbeddedCheckout} disabled={checkoutLoading}>
+              {checkoutLoading ? "Loading…" : "Continue to payment"}
             </button>
           )}
 

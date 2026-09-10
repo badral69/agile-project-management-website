@@ -6,7 +6,7 @@ import { AppError } from "../utils/app-error";
 import { asyncHandler } from "../utils/async-handler";
 import { sendTaskAssignmentEmail } from "../utils/mailer";
 import { getPagination } from "../utils/pagination";
-import { canAccessProject, canManageProject } from "../utils/project-permissions";
+import { canAccessProject, canManageProject, getProjectPermissions } from "../utils/project-permissions";
 import { sanitizePlainText } from "../utils/sanitize";
 
 const getProjectAssignee = async (projectId: string, assigneeId: string) => {
@@ -147,8 +147,7 @@ export const getTaskById = asyncHandler(async (request: Request, response: Respo
 
 export const createTask = asyncHandler(async (request: Request, response: Response) => {
   const projectId = request.body.projectId as string;
-  const hasAccess = await canAccessProject(projectId, request.user!.id, request.user!.role);
-  const canManage = await canManageProject(projectId, request.user!.id, request.user!.role);
+  const { canAccess: hasAccess, canManage } = await getProjectPermissions(projectId, request.user!.id, request.user!.role);
   const requestedAssigneeId = (request.body.assigneeId as string | undefined) || null;
   const requestedDueDate = request.body.dueDate ? new Date(request.body.dueDate) : null;
 
@@ -236,8 +235,7 @@ export const updateTask = asyncHandler(async (request: Request, response: Respon
     throw new AppError("Task not found.", StatusCodes.NOT_FOUND);
   }
 
-  const hasAccess = await canAccessProject(existingTask.projectId, request.user!.id, request.user!.role);
-  const canManage = await canManageProject(existingTask.projectId, request.user!.id, request.user!.role);
+  const { canAccess: hasAccess, canManage } = await getProjectPermissions(existingTask.projectId, request.user!.id, request.user!.role);
 
   if (!hasAccess) {
     throw new AppError("You do not have permission to update this task.", StatusCodes.FORBIDDEN);

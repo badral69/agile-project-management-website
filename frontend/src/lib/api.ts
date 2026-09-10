@@ -62,6 +62,34 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
+let refreshPromise: Promise<void> | null = null;
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error: unknown) => {
+    if (!axios.isAxiosError(error)) return Promise.reject(error);
+
+    const status = error.response?.status;
+    const url = error.config?.url ?? "";
+    const isAuthRoute = url.includes("/auth/refresh") || url.includes("/auth/login") || url.includes("/auth/register") || url.includes("/auth/me");
+
+    if (status === 401 && !isAuthRoute) {
+      try {
+        if (!refreshPromise) {
+          refreshPromise = api.post("/auth/refresh").then(() => undefined).finally(() => { refreshPromise = null; });
+        }
+        await refreshPromise;
+        // Retry original request with fresh cookie
+        return api.request(error.config!);
+      } catch {
+        if (typeof window !== "undefined") window.location.href = "/login";
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
+
 export const getErrorMessage = (error: unknown) => {
   if (axios.isAxiosError(error)) {
     return error.response?.data?.message || error.message;

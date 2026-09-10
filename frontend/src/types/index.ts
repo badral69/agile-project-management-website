@@ -32,6 +32,7 @@ export type User = {
   googleConnected?: boolean;
   billingPlan?: BillingPlan;
   subscriptionStatus?: string | null;
+  emailVerified?: boolean;
   aiEntitlements?: AiEntitlements;
   companies?: CompanySummary[];
   createdAt: string;

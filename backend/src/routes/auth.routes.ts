@@ -1,7 +1,6 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { confirmPasswordReset, csrf, googleAuth, linkGoogleAccount, login, logout, me, register, requestPasswordReset, updateProfile } from "../controllers/auth.controller";
+import { confirmPasswordReset, csrf, googleAuth, linkGoogleAccount, login, logout, me, refresh, register, requestPasswordReset, updateProfile, verifyEmail } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 
@@ -16,21 +15,9 @@ const passwordSchema = z
   .regex(/[0-9]/, "Password must include a number.")
   .regex(/[^A-Za-z0-9]/, "Password must include a special character.");
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  skipSuccessfulRequests: true,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    message: "Too many authentication attempts. Please wait a few minutes and try again.",
-  },
-});
-
 router.get("/csrf", csrf);
 router.post(
   "/google",
-  authLimiter,
   validate(
     z.object({
       body: z.object({
@@ -45,7 +32,6 @@ router.post(
 
 router.post(
   "/register",
-  authLimiter,
   validate(
     z.object({
       body: z.object({
@@ -61,7 +47,6 @@ router.post(
 );
 router.post(
   "/login",
-  authLimiter,
   validate(
     z.object({
       body: z.object({
@@ -76,7 +61,6 @@ router.post(
 );
 router.post(
   "/forgot-password",
-  authLimiter,
   validate(
     z.object({
       body: z.object({
@@ -90,12 +74,11 @@ router.post(
 );
 router.post(
   "/reset-password",
-  authLimiter,
   validate(
     z.object({
       body: z.object({
         email: z.string().email(),
-        code: z.string().length(6).regex(/^\d{6}$/),
+        token: z.string().length(64).regex(/^[a-f0-9]{64}$/),
         newPassword: passwordSchema,
       }),
       params: z.object({}).optional(),
@@ -105,6 +88,8 @@ router.post(
   confirmPasswordReset,
 );
 router.post("/logout", logout);
+router.post("/refresh", refresh);
+router.get("/verify-email", verifyEmail);
 router.get("/me", authenticate, me);
 router.post(
   "/google/link",

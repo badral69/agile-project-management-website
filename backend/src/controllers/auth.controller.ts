@@ -9,16 +9,34 @@ import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 import { asyncHandler } from "../utils/async-handler";
 import { signToken } from "../utils/jwt";
-import { sendPasswordResetCodeEmail } from "../utils/mailer";
+import { sendPasswordResetEmail, sendVerificationEmail } from "../utils/mailer";
 import { getAiEntitlements } from "../utils/plan-entitlements";
 import { sanitizePlainText } from "../utils/sanitize";
 import { getCsrfTokenFromResponse, setCsrfCookie } from "../middleware/csrf";
 
-const cookieOptions = {
+const ACCESS_COOKIE = "agile_access_token";
+const REFRESH_COOKIE = "agile_refresh_token";
+
+const accessCookieOptions = {
+  httpOnly: true,
+  secure: env.COOKIE_SECURE,
+  sameSite: "lax" as const,
+  maxAge: 15 * 60 * 1000,
+};
+
+const refreshCookieOptions = {
   httpOnly: true,
   secure: env.COOKIE_SECURE,
   sameSite: "lax" as const,
   maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+const issueRefreshToken = async (userId: string): Promise<string> => {
+  const raw = crypto.randomBytes(40).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await prisma.refreshToken.create({ data: { userId, tokenHash, expiresAt } });
+  return raw;
 };
 
 const googleClient = env.GOOGLE_CLIENT_ID ? new OAuth2Client(env.GOOGLE_CLIENT_ID) : null;
@@ -33,6 +51,7 @@ const serializeUser = (user: {
   googleId?: string | null;
   billingPlan: BillingPlan;
   subscriptionStatus: string | null;
+  emailVerified?: boolean;
   companyMemberships?: Array<{
     companyId: string;
     companyName: string;
@@ -50,6 +69,7 @@ const serializeUser = (user: {
   googleConnected: Boolean(user.googleId),
   billingPlan: user.billingPlan,
   subscriptionStatus: user.subscriptionStatus,
+  emailVerified: user.emailVerified ?? true,
   aiEntitlements: getAiEntitlements(user.billingPlan, user.role),
   companies: user.companyMemberships || [],
   createdAt: user.createdAt,
@@ -88,10 +108,12 @@ const verifyGoogleCredential = async (credential: string) => {
   };
 };
 
-const issueAuthenticatedResponse = (response: Response, user: Parameters<typeof serializeUser>[0], statusCode = StatusCodes.OK, message = "Login successful.") => {
-  const token = signToken({ id: user.id, email: user.email, role: user.role });
+const issueAuthenticatedResponse = async (response: Response, user: Parameters<typeof serializeUser>[0], statusCode = StatusCodes.OK, message = "Login successful.") => {
+  const accessToken = signToken({ id: user.id, email: user.email, role: user.role });
+  const rawRefresh = await issueRefreshToken(user.id);
   setCsrfCookie(response);
-  response.cookie("agile_access_token", token, cookieOptions);
+  response.cookie(ACCESS_COOKIE, accessToken, accessCookieOptions);
+  response.cookie(REFRESH_COOKIE, rawRefresh, refreshCookieOptions);
 
   response.status(statusCode).json({
     message,
@@ -112,16 +134,27 @@ export const register = asyncHandler(async (request: Request, response: Response
     throw new AppError("Email is already registered.", StatusCodes.CONFLICT);
   }
 
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
     data: {
       fullName,
       email,
       passwordHash,
+      emailVerificationToken: tokenHash,
+      emailVerificationExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
   });
 
-  issueAuthenticatedResponse(response, user, StatusCodes.CREATED, "Registration successful.");
+  const origin = env.CLIENT_URL || "https://sprintflow-web-badralmunh.fly.dev";
+  void sendVerificationEmail({
+    recipientEmail: email,
+    recipientName: fullName,
+    verifyUrl: `${origin}/verify-email?token=${rawToken}`,
+  });
+
+  await issueAuthenticatedResponse(response, user, StatusCodes.CREATED, "Registration successful. Please check your email to verify your account.");
 });
 
 export const login = asyncHandler(async (request: Request, response: Response) => {
@@ -138,7 +171,7 @@ export const login = asyncHandler(async (request: Request, response: Response) =
     throw new AppError("Invalid email or password.", StatusCodes.UNAUTHORIZED);
   }
 
-  issueAuthenticatedResponse(response, user);
+  await issueAuthenticatedResponse(response, user);
 });
 
 export const requestPasswordReset = asyncHandler(async (request: Request, response: Response) => {
@@ -146,73 +179,120 @@ export const requestPasswordReset = asyncHandler(async (request: Request, respon
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (user) {
-    const code = String(crypto.randomInt(100000, 999999));
-    const passwordResetCodeHash = await bcrypt.hash(code, 10);
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const passwordResetCodeHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const passwordResetCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     await prisma.user.update({
       where: { id: user.id },
-      data: {
-        passwordResetCodeHash,
-        passwordResetCodeExpiresAt,
-      },
+      data: { passwordResetCodeHash, passwordResetCodeExpiresAt },
     });
 
-    await sendPasswordResetCodeEmail({
+    const origin = env.CLIENT_URL || "https://sprintflow-web-badralmunh.fly.dev";
+    await sendPasswordResetEmail({
       recipientEmail: user.email,
       recipientName: user.fullName,
-      code,
+      resetUrl: `${origin}/forgot-password?token=${rawToken}&email=${encodeURIComponent(user.email)}`,
     });
   }
 
   response.json({
-    message: "If an account with that email exists, a reset code has been sent.",
+    message: "If an account with that email exists, a reset link has been sent.",
   });
 });
 
 export const confirmPasswordReset = asyncHandler(async (request: Request, response: Response) => {
   const email = String(request.body.email).toLowerCase().trim();
-  const code = String(request.body.code).trim();
+  const rawToken = String(request.body.token).trim();
   const newPassword = request.body.newPassword as string;
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !user.passwordResetCodeHash || !user.passwordResetCodeExpiresAt) {
-    throw new AppError("Invalid or expired reset code.", StatusCodes.BAD_REQUEST);
+    throw new AppError("Invalid or expired reset link.", StatusCodes.BAD_REQUEST);
   }
 
   if (user.passwordResetCodeExpiresAt.getTime() < Date.now()) {
-    throw new AppError("Invalid or expired reset code.", StatusCodes.BAD_REQUEST);
+    throw new AppError("Invalid or expired reset link.", StatusCodes.BAD_REQUEST);
   }
 
-  const isValidCode = await bcrypt.compare(code, user.passwordResetCodeHash);
-  if (!isValidCode) {
-    throw new AppError("Invalid or expired reset code.", StatusCodes.BAD_REQUEST);
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  if (tokenHash !== user.passwordResetCodeHash) {
+    throw new AppError("Invalid or expired reset link.", StatusCodes.BAD_REQUEST);
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash,
-      passwordResetCodeHash: null,
-      passwordResetCodeExpiresAt: null,
-    },
-  });
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, passwordResetCodeHash: null, passwordResetCodeExpiresAt: null },
+    }),
+    prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+  ]);
 
   response.json({
     message: "Password updated successfully. You can sign in with your new password.",
   });
 });
 
-export const logout = (_request: Request, response: Response) => {
-  response.clearCookie("agile_access_token");
+export const logout = asyncHandler(async (request: Request, response: Response) => {
+  const rawRefresh = request.cookies?.[REFRESH_COOKIE] as string | undefined;
+  if (rawRefresh) {
+    const tokenHash = crypto.createHash("sha256").update(rawRefresh).digest("hex");
+    await prisma.refreshToken.deleteMany({ where: { tokenHash } }).catch(() => undefined);
+  }
+  response.clearCookie(ACCESS_COOKIE);
+  response.clearCookie(REFRESH_COOKIE);
   setCsrfCookie(response);
   response.json({
     message: "Logout successful.",
     csrfToken: getCsrfTokenFromResponse(response),
   });
-};
+});
+
+export const refresh = asyncHandler(async (request: Request, response: Response) => {
+  const rawRefresh = request.cookies?.[REFRESH_COOKIE] as string | undefined;
+  if (!rawRefresh) {
+    throw new AppError("No refresh token.", StatusCodes.UNAUTHORIZED);
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(rawRefresh).digest("hex");
+  const stored = await prisma.refreshToken.findUnique({ where: { tokenHash }, include: { user: true } });
+
+  if (!stored || stored.expiresAt < new Date()) {
+    if (stored) await prisma.refreshToken.delete({ where: { id: stored.id } });
+    throw new AppError("Refresh token expired. Please log in again.", StatusCodes.UNAUTHORIZED);
+  }
+
+  // Rotate: delete old token, issue new one
+  await prisma.refreshToken.delete({ where: { id: stored.id } });
+  const accessToken = signToken({ id: stored.user.id, email: stored.user.email, role: stored.user.role });
+  const newRawRefresh = await issueRefreshToken(stored.user.id);
+
+  response.cookie(ACCESS_COOKIE, accessToken, accessCookieOptions);
+  response.cookie(REFRESH_COOKIE, newRawRefresh, refreshCookieOptions);
+  response.json({ message: "Token refreshed." });
+});
+
+export const verifyEmail = asyncHandler(async (request: Request, response: Response) => {
+  const raw = String(request.query.token || "").trim();
+  if (!raw) {
+    throw new AppError("Verification token is required.", StatusCodes.BAD_REQUEST);
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+  const user = await prisma.user.findUnique({ where: { emailVerificationToken: tokenHash } });
+  if (!user || !user.emailVerificationExpiry || user.emailVerificationExpiry < new Date()) {
+    throw new AppError("Invalid or expired verification link.", StatusCodes.BAD_REQUEST);
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerified: true, emailVerificationToken: null, emailVerificationExpiry: null },
+  });
+
+  response.json({ message: "Email verified successfully." });
+});
 
 export const csrf = (_request: Request, response: Response) => {
   response.json({ csrfToken: getCsrfTokenFromResponse(response) });
@@ -357,12 +437,15 @@ export const googleAuth = asyncHandler(async (request: Request, response: Respon
           googleId: profile.googleId,
           passwordHash,
           avatarUrl: profile.avatarUrl,
+          emailVerified: true,
         },
       });
     }
+  } else if (!user.emailVerified) {
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
   }
 
-  issueAuthenticatedResponse(response, user, StatusCodes.OK, "Google sign-in successful.");
+  await issueAuthenticatedResponse(response, user, StatusCodes.OK, "Google sign-in successful.");
 });
 
 export const linkGoogleAccount = asyncHandler(async (request: Request, response: Response) => {
@@ -424,6 +507,7 @@ export const linkGoogleAccount = asyncHandler(async (request: Request, response:
     message: currentUser.email === profile.email ? "Google account connected." : "Google account connected with a different email address.",
     user: serializeUser({
       ...user,
+      emailVerified: true,
       companyMemberships: user.companyMemberships.map((membership) => ({
         companyId: membership.company.id,
         companyName: membership.company.name,
