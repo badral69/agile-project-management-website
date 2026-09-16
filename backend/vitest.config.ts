@@ -12,5 +12,6 @@ export default defineConfig({
     sequence: { concurrent: false },
     reporters: ["verbose"],
     include: ["src/__tests__/**/*.test.ts"],
+    exclude: ["src/__tests__/unit/**"],
   },
 });

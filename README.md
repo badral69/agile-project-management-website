@@ -139,11 +139,11 @@ After updating Stripe keys, rebuild both apps:
 docker compose up -d --build backend frontend
 ```
 
-## Seeded Demo Accounts
+## Accounts
 
-- `admin@agilepm.local` / `Password123!`
-- `moderator@agilepm.local` / `Password123!`
-- `user@agilepm.local` / `Password123!`
+Create your own account using the registration page. Shared demo accounts cannot sign in or use existing sessions in production, and production deployments do not seed demo data.
+
+For local development only, set `SEED_PASSWORD` explicitly before running `npm run prisma:seed` in `backend/`.
 
 ## API Documentation
 

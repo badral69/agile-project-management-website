@@ -144,15 +144,6 @@ export default function LoginPage() {
               <Link to="/register">{t("auth.createOne")}</Link>
             </p>
 
-            <details className="auth-hex-demo">
-              <summary>Demo credentials</summary>
-              <div className="auth-hex-demo-list">
-                <span>admin@agilepm.local</span>
-                <span>moderator@agilepm.local</span>
-                <span>user@agilepm.local</span>
-                <span className="auth-hex-demo-pass">Password: Password123!</span>
-              </div>
-            </details>
           </>
         )}
       </div>

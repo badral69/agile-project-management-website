@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
 import { verifyToken } from "../utils/jwt";
+import { isDisabledDemoAccount } from "../utils/demo-accounts";
 
 const parseBearerToken = (authorization?: string) => {
   if (!authorization?.startsWith("Bearer ")) {
@@ -19,6 +20,9 @@ export const authenticate = (request: Request, response: Response, next: NextFun
 
   try {
     request.user = verifyToken(token);
+    if (isDisabledDemoAccount(request.user.email)) {
+      return response.status(StatusCodes.UNAUTHORIZED).json({ message: "Please register or sign in with your own account." });
+    }
     next();
   } catch (_error) {
     return response.status(StatusCodes.UNAUTHORIZED).json({ message: "Invalid or expired token." });

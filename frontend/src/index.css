@@ -2526,45 +2526,6 @@ small {
   color: #a5b4fc;
 }
 
-.auth-hex-demo {
-  margin-top: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.auth-hex-demo summary {
-  padding: 10px 14px;
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.32);
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-  transition: color 0.15s;
-}
-
-.auth-hex-demo summary:hover {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.auth-hex-demo-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 14px 12px;
-}
-
-.auth-hex-demo-list span {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.45);
-  font-family: monospace;
-}
-
-.auth-hex-demo-pass {
-  color: rgba(99, 102, 241, 0.7) !important;
-  margin-top: 4px;
-}
-
 /* legacy */
 .auth-shell {
   min-height: 100vh;
@@ -2625,18 +2586,6 @@ small {
 
 .auth-switch {
   margin-top: 18px;
-}
-
-.demo-credentials {
-  display: grid;
-  gap: 8px;
-  margin-top: 24px;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(16px);
-  max-width: 420px;
 }
 
 .inline-check {

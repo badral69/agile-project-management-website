@@ -4,7 +4,15 @@ import { PrismaClient, ProjectMemberRole, ProjectStatus, Role, TaskPriority, Tas
 const prisma = new PrismaClient();
 
 async function main() {
-  const seedPassword = process.env.SEED_PASSWORD || "Password123!";
+  if (process.env.NODE_ENV === "production") {
+    console.log("Skipping demo seed in production. Users must register their own accounts.");
+    return;
+  }
+
+  const seedPassword = process.env.SEED_PASSWORD;
+  if (!seedPassword) {
+    throw new Error("Set SEED_PASSWORD explicitly to seed development accounts.");
+  }
   const passwordHash = await bcrypt.hash(seedPassword, 10);
 
   const [admin, moderator, user] = await Promise.all([

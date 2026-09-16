@@ -13,6 +13,7 @@ import { sendPasswordResetEmail, sendVerificationEmail } from "../utils/mailer";
 import { getAiEntitlements } from "../utils/plan-entitlements";
 import { sanitizePlainText } from "../utils/sanitize";
 import { getCsrfTokenFromResponse, setCsrfCookie } from "../middleware/csrf";
+import { isDisabledDemoAccount } from "../utils/demo-accounts";
 
 const ACCESS_COOKIE = "agile_access_token";
 const REFRESH_COOKIE = "agile_refresh_token";
@@ -109,6 +110,10 @@ const verifyGoogleCredential = async (credential: string) => {
 };
 
 const issueAuthenticatedResponse = async (response: Response, user: Parameters<typeof serializeUser>[0], statusCode = StatusCodes.OK, message = "Login successful.") => {
+  if (isDisabledDemoAccount(user.email)) {
+    throw new AppError("Invalid email or password.", StatusCodes.UNAUTHORIZED);
+  }
+
   const accessToken = signToken({ id: user.id, email: user.email, role: user.role });
   const rawRefresh = await issueRefreshToken(user.id);
   setCsrfCookie(response);
@@ -124,6 +129,9 @@ const issueAuthenticatedResponse = async (response: Response, user: Parameters<t
 
 export const register = asyncHandler(async (request: Request, response: Response) => {
   const email = String(request.body.email).toLowerCase().trim();
+  if (isDisabledDemoAccount(email)) {
+    throw new AppError("Please register with your own email address.", StatusCodes.BAD_REQUEST);
+  }
   const fullName = request.body.fullName
     ? sanitizePlainText(request.body.fullName)
     : email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -161,6 +169,10 @@ export const login = asyncHandler(async (request: Request, response: Response) =
   const email = String(request.body.email).toLowerCase().trim();
   const password = request.body.password as string;
 
+  if (isDisabledDemoAccount(email)) {
+    throw new AppError("Invalid email or password.", StatusCodes.UNAUTHORIZED);
+  }
+
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     throw new AppError("Invalid email or password.", StatusCodes.UNAUTHORIZED);
@@ -178,7 +190,7 @@ export const requestPasswordReset = asyncHandler(async (request: Request, respon
   const email = String(request.body.email).toLowerCase().trim();
   const user = await prisma.user.findUnique({ where: { email } });
 
-  if (user) {
+  if (user && !isDisabledDemoAccount(user.email)) {
     const rawToken = crypto.randomBytes(32).toString("hex");
     const passwordResetCodeHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const passwordResetCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
@@ -207,7 +219,7 @@ export const confirmPasswordReset = asyncHandler(async (request: Request, respon
   const newPassword = request.body.newPassword as string;
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.passwordResetCodeHash || !user.passwordResetCodeExpiresAt) {
+  if (!user || isDisabledDemoAccount(user.email) || !user.passwordResetCodeHash || !user.passwordResetCodeExpiresAt) {
     throw new AppError("Invalid or expired reset link.", StatusCodes.BAD_REQUEST);
   }
 
@@ -259,7 +271,7 @@ export const refresh = asyncHandler(async (request: Request, response: Response)
   const tokenHash = crypto.createHash("sha256").update(rawRefresh).digest("hex");
   const stored = await prisma.refreshToken.findUnique({ where: { tokenHash }, include: { user: true } });
 
-  if (!stored || stored.expiresAt < new Date()) {
+  if (!stored || isDisabledDemoAccount(stored.user.email) || stored.expiresAt < new Date()) {
     if (stored) await prisma.refreshToken.delete({ where: { id: stored.id } });
     throw new AppError("Refresh token expired. Please log in again.", StatusCodes.UNAUTHORIZED);
   }
